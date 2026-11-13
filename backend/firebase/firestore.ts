@@ -16,8 +16,13 @@ import {
   onSnapshot,
   Unsubscribe,
   Timestamp,
+  Firestore,
 } from 'firebase/firestore';
-import { db } from './config';
+import { db, isFirebaseEnabled } from './config';
+
+export function isDbReady(): boolean {
+  return Boolean(isFirebaseEnabled && db && (db instanceof Firestore || (db as any)?.type === 'firestore'));
+}
 import { isSlotInPast } from '@/shared/helpers/pricing';
 import { Venue, Booking, UserProfile, VenueFilters, ApprovalStatus, Landmark, Infrastructure, OwnershipRequest } from '@/shared/types';
 import { generateTicketId } from '@/shared/helpers/ticket';
@@ -66,6 +71,7 @@ export function serializeData<T>(data: T): T {
 // ── VENUES ──────────────────────────────────────────────────────────────────
 
 export async function getAllVenues(): Promise<Venue[]> {
+  if (!isDbReady()) return [];
   const snap = await getDocs(collection(db, 'venues'));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Venue));
 }
@@ -73,6 +79,7 @@ export async function getAllVenues(): Promise<Venue[]> {
 /** Fetch only active venues from Firestore owned by approved owners.
  *  Firestore is the single source of truth — no static fallback. */
 export async function getApprovedVenues(): Promise<Venue[]> {
+  if (!isDbReady()) return [];
   const q = query(
     collection(db, 'venues'),
     where('available', '==', true)
@@ -83,11 +90,13 @@ export async function getApprovedVenues(): Promise<Venue[]> {
 }
 
 export async function getVenueById(id: string): Promise<Venue | null> {
+  if (!isDbReady() || !id) return null;
   const snap = await getDoc(doc(db, 'venues', id));
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as Venue) : null;
 }
 
 export async function getFilteredVenues(filters: VenueFilters): Promise<Venue[]> {
+  if (!isDbReady()) return [];
   let q = query(collection(db, 'venues'));
 
   if (filters.sport) {
@@ -169,6 +178,7 @@ export async function deleteVenue(id: string): Promise<void> {
 
 /** Fetch all venues owned by a specific owner */
 export async function getOwnerVenues(ownerId: string): Promise<Venue[]> {
+  if (!isDbReady() || !ownerId) return [];
   const q = query(collection(db, 'venues'), where('ownerId', '==', ownerId));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Venue));
@@ -176,6 +186,10 @@ export async function getOwnerVenues(ownerId: string): Promise<Venue[]> {
 
 /** Real-time listener for owner's venues */
 export function subscribeOwnerVenues(ownerId: string, callback: (venues: Venue[]) => void): Unsubscribe {
+  if (!isDbReady() || !ownerId) {
+    callback([]);
+    return () => {};
+  }
   const q = query(collection(db, 'venues'), where('ownerId', '==', ownerId));
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Venue)));
@@ -185,6 +199,7 @@ export function subscribeOwnerVenues(ownerId: string, callback: (venues: Venue[]
 // ── BOOKINGS ─────────────────────────────────────────────────────────────────
 
 export async function getUserBookings(userId: string): Promise<Booking[]> {
+  if (!isDbReady() || !userId) return [];
   const q = query(
     collection(db, 'bookings'),
     where('userId', '==', userId),
@@ -320,7 +335,7 @@ export async function getVenueBookingsForOwner(venueIds: string[]): Promise<Book
 
 /** Real-time listener for bookings on a set of venue IDs */
 export function subscribeVenueBookings(venueIds: string[], callback: (bookings: Booking[]) => void): Unsubscribe {
-  if (venueIds.length === 0) {
+  if (!isDbReady() || venueIds.length === 0) {
     callback([]);
     return () => {};
   }
@@ -336,6 +351,7 @@ export function subscribeVenueBookings(venueIds: string[], callback: (bookings: 
 
 /** Admin: fetch ALL bookings */
 export async function getAllBookings(): Promise<Booking[]> {
+  if (!isDbReady()) return [];
   const q = query(collection(db, 'bookings'), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Booking));
@@ -344,6 +360,7 @@ export async function getAllBookings(): Promise<Booking[]> {
 // ── SAVED VENUES ─────────────────────────────────────────────────────────────
 
 export async function toggleSavedVenue(userId: string, venueId: string, isSaved: boolean): Promise<void> {
+  if (!isDbReady()) return;
   const userRef = doc(db, 'users', userId);
   await updateDoc(userRef, {
     savedVenues: isSaved ? arrayRemove(venueId) : arrayUnion(venueId),
@@ -352,7 +369,7 @@ export async function toggleSavedVenue(userId: string, venueId: string, isSaved:
 
 /** Fetch venue documents by array of IDs (for saved venues) */
 export async function getVenuesByIds(ids: string[]): Promise<Venue[]> {
-  if (ids.length === 0) return [];
+  if (!isDbReady() || ids.length === 0) return [];
   const results: Venue[] = [];
   await Promise.all(
     ids.map(async (id) => {
@@ -364,11 +381,13 @@ export async function getVenuesByIds(ids: string[]): Promise<Venue[]> {
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  if (!isDbReady() || !uid) return null;
   const snap = await getDoc(doc(db, 'users', uid));
   return snap.exists() ? (snap.data() as UserProfile) : null;
 }
 
 export async function getVenueBookings(venueId: string, date: string): Promise<Booking[]> {
+  if (!isDbReady() || !venueId) return [];
   const q = query(
     collection(db, 'bookings'),
     where('venueId', '==', venueId),
@@ -396,6 +415,7 @@ export async function checkSlotAvailability(venueId: string, date: string, slot:
  * only in the document path. We always inject uid from d.id to ensure it's populated.
  */
 export async function getAllUsers(): Promise<UserProfile[]> {
+  if (!isDbReady()) return [];
   const snap = await getDocs(collection(db, 'users'));
   return snap.docs.map((d) => ({
     uid: d.id,         // Always inject from document path — never rely on stored uid field
@@ -405,11 +425,13 @@ export async function getAllUsers(): Promise<UserProfile[]> {
 
 /** Admin: update an owner's approval status */
 export async function updateOwnerApproval(uid: string, status: ApprovalStatus): Promise<void> {
+  if (!isDbReady()) return;
   await updateDoc(doc(db, 'users', uid), { approvalStatus: status });
 }
 
 /** Get users with a specific role */
 export async function getUsersByRole(role: 'player' | 'owner' | 'admin'): Promise<UserProfile[]> {
+  if (!isDbReady()) return [];
   const q = query(collection(db, 'users'), where('role', '==', role));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({
@@ -425,6 +447,10 @@ export async function getUsersByRole(role: 'player' | 'owner' | 'admin'): Promis
  * Injects uid from document path so legacy docs without stored uid field still work.
  */
 export function subscribeAllUsers(callback: (users: UserProfile[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   return onSnapshot(collection(db, 'users'), (snap) => {
     callback(snap.docs.map((d) => ({
       uid: d.id,
@@ -440,6 +466,10 @@ export function subscribeAllUsers(callback: (users: UserProfile[]) => void): Uns
  * Admin: realtime listener for ALL venues.
  */
 export function subscribeAllVenues(callback: (venues: Venue[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   return onSnapshot(collection(db, 'venues'), (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Venue)));
   }, (err) => {
@@ -452,6 +482,10 @@ export function subscribeAllVenues(callback: (venues: Venue[]) => void): Unsubsc
  * Admin: realtime listener for ALL bookings (ordered by creation desc).
  */
 export function subscribeAllBookings(callback: (bookings: Booking[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   const q = query(collection(db, 'bookings'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Booking)));
@@ -463,6 +497,10 @@ export function subscribeAllBookings(callback: (bookings: Booking[]) => void): U
 
 /** Realtime listener for approved active venues */
 export function subscribeApprovedVenues(callback: (venues: Venue[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   const q = query(
     collection(db, 'venues'),
     where('available', '==', true)
@@ -478,6 +516,10 @@ export function subscribeApprovedVenues(callback: (venues: Venue[]) => void): Un
 
 /** Realtime listener for bookings belonging to a specific owner */
 export function subscribeOwnerBookings(ownerId: string, callback: (bookings: Booking[]) => void): Unsubscribe {
+  if (!isDbReady() || !ownerId) {
+    callback([]);
+    return () => {};
+  }
   const q = query(collection(db, 'bookings'), where('ownerId', '==', ownerId));
   return onSnapshot(q, (snap) => {
     const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Booking));
@@ -497,12 +539,17 @@ export function subscribeOwnerBookings(ownerId: string, callback: (bookings: Boo
 // ── LANDMARKS ────────────────────────────────────────────────────────────────
 
 export async function getLandmarks(): Promise<Landmark[]> {
+  if (!isDbReady()) return [];
   const colRef = collection(db, 'landmarks');
   const snap = await getDocs(colRef);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Landmark));
 }
 
 export function subscribeLandmarks(callback: (landmarks: Landmark[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'landmarks');
   return onSnapshot(colRef, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Landmark)));
@@ -513,18 +560,24 @@ export function subscribeLandmarks(callback: (landmarks: Landmark[]) => void): U
 }
 
 export async function getInfrastructure(): Promise<Infrastructure[]> {
+  if (!isDbReady()) return [];
   const colRef = collection(db, 'infrastructure');
   const snap = await getDocs(colRef);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Infrastructure));
 }
 
 export async function getInfrastructureById(id: string): Promise<Infrastructure | null> {
+  if (!isDbReady() || !id) return null;
   const snap = await getDoc(doc(db, 'infrastructure', id));
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as Infrastructure) : null;
 }
 
 
 export function subscribeInfrastructure(callback: (infra: Infrastructure[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'infrastructure');
   return onSnapshot(colRef, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Infrastructure)));
@@ -708,6 +761,10 @@ export async function rejectOwnershipRequest(requestId: string): Promise<void> {
 }
 
 export function subscribeOwnershipRequests(callback: (reqs: OwnershipRequest[]) => void): Unsubscribe {
+  if (!isDbReady()) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'ownership_requests');
   const q = query(colRef, orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snap) => {
@@ -719,6 +776,10 @@ export function subscribeOwnershipRequests(callback: (reqs: OwnershipRequest[]) 
 }
 
 export function subscribeOwnerOwnershipRequests(ownerId: string, callback: (reqs: OwnershipRequest[]) => void): Unsubscribe {
+  if (!isDbReady() || !ownerId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'ownership_requests');
   const q = query(colRef, where('ownerId', '==', ownerId));
   return onSnapshot(q, (snap) => {
@@ -736,6 +797,7 @@ export function subscribeOwnerOwnershipRequests(ownerId: string, callback: (reqs
 }
 
 export async function getOwnershipRequestByVenueCode(venueCode: string): Promise<OwnershipRequest | null> {
+  if (!isDbReady() || !venueCode) return null;
   const colRef = collection(db, 'ownership_requests');
   const q = query(colRef, where('venueCode', '==', venueCode));
   const snap = await getDocs(q);

@@ -1,7 +1,7 @@
 // Firebase configuration and initialization
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -12,11 +12,12 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const hasValidKeys = 
+const hasValidKeys = Boolean(
   firebaseConfig.apiKey && 
   firebaseConfig.apiKey !== 'your_firebase_api_key' &&
   firebaseConfig.projectId &&
-  firebaseConfig.projectId !== 'your_project_id';
+  firebaseConfig.projectId !== 'your_project_id'
+);
 
 let app: any;
 let auth: any;
@@ -26,12 +27,18 @@ if (hasValidKeys) {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
     auth = getAuth(app);
-    setPersistence(auth, browserLocalPersistence).catch((err) => {
-      console.error('Failed to set Firebase Auth persistence:', err);
-    });
-    db = initializeFirestore(app, {
-      experimentalForceLongPolling: true,
-    });
+    if (typeof window !== 'undefined') {
+      setPersistence(auth, browserLocalPersistence).catch((err) => {
+        console.error('Failed to set Firebase Auth persistence:', err);
+      });
+    }
+    try {
+      db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+      });
+    } catch {
+      db = getFirestore(app);
+    }
   } catch (error) {
     console.error('Failed to initialize Firebase with provided credentials:', error);
   }
@@ -44,7 +51,7 @@ if (hasValidKeys) {
     currentUser: null,
     onAuthStateChanged: () => () => {},
   } as any;
-  db = {} as any;
+  db = null;
 }
 
 export { app, auth, db, hasValidKeys as isFirebaseEnabled };

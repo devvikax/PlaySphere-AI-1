@@ -10,7 +10,7 @@ import {
 import { useAuth } from '@/contexts/AuthProvider';
 import { cancelBooking, getVenuesByIds } from '@/backend/firebase/firestore';
 import { onSnapshot, query, collection, where, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '@/backend/firebase/config';
+import { db, isFirebaseEnabled } from '@/backend/firebase/config';
 import { Booking, Venue } from '@/shared/types';
 import { formatCurrency, formatDate, getSportEmoji, cn, getSportImage } from '@/shared/helpers/utils';
 import { AIConciergePreview } from '@/components/ai/AIConciergePreview';
@@ -34,7 +34,10 @@ export default function DashboardPage() {
 
   // Real-time bookings listener
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isFirebaseEnabled || !db) {
+      setBookingsLoading(false);
+      return;
+    }
     const q = query(
       collection(db, 'bookings'),
       where('playerId', '==', user.uid)

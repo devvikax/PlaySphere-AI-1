@@ -16,7 +16,7 @@ import { signUpWithEmail, signInWithEmail, logOut } from '@/backend/firebase/aut
 import { handleConciergeRequest } from '@/backend/ai/concierge';
 import { handleDiscoverRequest } from '@/backend/ai/discover';
 import { runInfrastructureDiscovery } from '@/backend/ai/infrastructure-discovery';
-import { collection, query, where, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc, Firestore } from 'firebase/firestore';
 import { db } from '@/backend/firebase/config';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,6 +56,10 @@ export async function GET() {
 
   try {
     log('Starting PS-25 Alignment Verification Suite...');
+
+    if (!db || !(db instanceof Firestore)) {
+      return NextResponse.json({ success: false, error: 'Firestore is not initialized. Check Firebase environment configuration.' }, { status: 500 });
+    }
 
     // 0. Authenticate as Admin to seed
     log('Step 0: Logging in as Admin (testadmin@gmail.com)...');

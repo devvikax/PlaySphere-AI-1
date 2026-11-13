@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, Firestore } from 'firebase/firestore';
 import { db } from '@/backend/firebase/config';
 import { seedLandmarksAndInfrastructure } from '@/backend/firebase/firestore';
 
 export async function GET(req: NextRequest) {
   try {
+    if (!db || !(db instanceof Firestore)) {
+      return NextResponse.json({ error: 'Firestore is not initialized. Please verify your Firebase configuration.' }, { status: 500 });
+    }
     const logs: string[] = [];
     logs.push("Starting database force-reset and re-seed process...");
 

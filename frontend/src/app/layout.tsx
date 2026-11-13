@@ -44,6 +44,7 @@ export const metadata: Metadata = {
 };
 
 import { ThemeProvider } from '@/contexts/ThemeProvider';
+import { ToastProvider } from '@/components/neo/NeoToast';
 
 export default function RootLayout({
   children,
@@ -77,11 +78,13 @@ export default function RootLayout({
       </head>
       <body className="bg-canvas text-slate-200 antialiased transition-colors duration-300">
         <ThemeProvider>
-          <AuthProvider>
-            <Navbar />
-            <main>{children}</main>
-            <Footer />
-          </AuthProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <Navbar />
+              <main>{children}</main>
+              <Footer />
+            </AuthProvider>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>
